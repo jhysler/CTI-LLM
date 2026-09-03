@@ -1,0 +1,112 @@
+# DNS4CN topic configuration
+# Term weights: high=10, medium=3, low=1
+# A document's score = sum(weight * occurrences) across all matched terms
+# 'context' terms are noisy alone but boost docs that hit primary terms
+#
+# 2026-06-24: second-pass terms harvested from top hits / findings doc,
+#   closing the "term list still close to seed" gap. New terms below are
+#   marked [harvested 2026-06-24]. Re-run Stages 4 -> 5 after this change.
+#
+# 2026-06-24 (p2): third-pass additions from the per-doc findings + KJ
+#   evidence map. Marked [harvested 2026-06-24 p2]. SCHEMA CAVEAT: the
+#   header says low_signal terms only count "when co-occurring," but the
+#   scoring formula above is flat (weight * occurrences), so low_signal
+#   terms DO score on their own at weight 1 — there is no co-occurrence
+#   gate. The noisy commons below (逆差 / 自循环 / 三码) are therefore
+#   un-gated; if they cause rank inversions the fix is in 04_triage.py,
+#   not here. See note at bottom.
+
+topic: dns4cn
+description: |
+  China's proposed national DNS architecture (DNS4CN), authored by Fang Binxing
+  and described in the Geedge / MESA leak. Part of the Shield-Cube (盾立方)
+  framework. Aims to nationalize DNS resolution, block encrypted DNS resolvers
+  globally, and reduce reliance on international root servers.
+
+# Primary terms — almost certainly relevant if matched
+high_signal:
+  - "DNS4CN"
+  - "DNS4China"
+  - "DNS for China"
+  - "国家域名解析"
+  - "国家DNS"
+  - "盾立方"           # Shield-Cube / CubeShield
+  - "DNS主权"          # DNS sovereignty
+  - "YYDNS"            # internal project/path name        [harvested 2026-06-24]
+  - "XDC02030000"      # internal document/project ID code [harvested 2026-06-24]
+  - "鹏城实验室"        # Pengcheng Lab (PCL) — policy/architecture arm; surfaces Fang deck attribution [harvested 2026-06-24 p2]
+  - "Pengcheng Laboratory"                                # [harvested 2026-06-24 p2]
+  - "doescan.xyz"      # self-built authoritative scan domain; checkable artifact (may be image-only in some docs) [harvested 2026-06-24 p2]
+
+# Strong topical relevance
+medium_signal:
+  - "national DNS"
+  - "Shield-Cube"
+  - "CubeShield"
+  - "Lock Net"
+  - "Locknet"
+  - "encrypted DNS"
+  - "加密DNS"
+  - "DoH"
+  - "DoT"
+  - "DoQ"              # DNS over QUIC — third encrypted-DNS variant in the corpus [harvested 2026-06-24 p2]
+  - "DNS over HTTPS"
+  - "DNS over TLS"
+  - "DNS over QUIC"                                        # [harvested 2026-06-24 p2]
+  - "HTTPDNS"          # app-level resolution bypass, called out as a governance gap [harvested 2026-06-24 p2]
+  - "域名解析系统"     # domain name resolution system
+  - "根服务器"         # root server
+  - "递归解析"         # recursive resolution
+  - "权威服务器"       # authoritative server
+  - "加密DNS测绘"      # encrypted-DNS mapping/surveying    [harvested 2026-06-24]
+  - "DoE操纵"          # DNS-over-Encryption manipulation   [harvested 2026-06-24]
+  - "解析逃逸"         # resolution escape / evasion        [harvested 2026-06-24]
+  - "替代应答"         # author's term for DoH MitM intercept [harvested 2026-06-24]
+  - "测绘组"           # surveying/mapping group (org unit) [harvested 2026-06-24]
+  - "大解析器"         # Grand Resolver — umbrella 5-subsystem architecture [harvested 2026-06-24 p2]
+  - "创新根"           # Innovation Root — paired-framework half (root autarky) [harvested 2026-06-24 p2]
+  - "测绘赋能"         # "mapping-enabling DNS4CN" — system-diagram label [harvested 2026-06-24 p2]
+  - "根联盟"           # root alliance — Fang 2017 federated-root precursor [harvested 2026-06-24 p2]
+  - "替代解析"         # substitute resolution               [harvested 2026-06-24 p2]
+  - "劫持式替代"       # hijack-style substitution (DoH MITM) [harvested 2026-06-24 p2]
+  - "旁路监听阻断"     # detect-and-block path (fieldable, KJ3) [harvested 2026-06-24 p2]
+  - "精确阻断"         # precise blocking (KJ3 detect-and-block) [harvested 2026-06-24 p2]
+  - "审查逃逸"         # censorship evasion                  [harvested 2026-06-24 p2]
+  - "保护性域名解析"   # Protective DNS — the public framing / rhetoric-vs-mechanism anchor [harvested 2026-06-24 p2]
+  - "Protective DNS"   #                                     [harvested 2026-06-24 p2]
+
+# Context terms — useful when co-occurring with above
+# NOTE: not actually gated by the current scorer (see schema caveat at top).
+low_signal:
+  - "Fang Binxing"
+  - "方滨兴"
+  - "网络空间主权"     # cyberspace sovereignty
+  - "信息内容安全"     # information content security
+  - "DNS"
+  - "domain resolution"
+  - "resolver"
+  - "DNS hijack"
+  - "DNS劫持"
+  - "先导专项"         # CAS Strategic Priority Program (funding term; CAS-wide, common) [harvested 2026-06-24 p2]
+  - "国家根"           # national root [harvested 2026-06-24 p2]
+  - "自循环"           # self-circulation / autarky (NOISY common word) [harvested 2026-06-24 p2]
+  - "逆差"             # "resolution deficit" KJ3 anchor (NOISY; usually in scare quotes) [harvested 2026-06-24 p2]
+  - "三码"             # three-codes user identification (NOISY) [harvested 2026-06-24 p2]
+  - "DNS4EU"           # foreign-PDNS landscape (Fig 12 framing) [harvested 2026-06-24 p2]
+  - "CISA E3A"         #                                     [harvested 2026-06-24 p2]
+  - "NCSC PDNS"        #                                     [harvested 2026-06-24 p2]
+  - "AUPDNS"           #                                     [harvested 2026-06-24 p2]
+
+# ---------------------------------------------------------------------------
+# Deliberately NOT added (and why):
+#   - bare "PCL"            : acronym collision (point-cloud library, etc.)
+#   - "国家域名解析管理平台" : already substring-covered by "国家域名解析" (high)
+#   - "From Fingerprint to Footprint" / "ESORICS" : academic-citation noise,
+#                            too narrow to discriminate
+#   - "替代应答"            : already present (medium) — not duplicated
+#
+# Known pre-existing quirk (not introduced by this pass): substring double-
+#   counting. A "加密DNS测绘" hit also matches "加密DNS", so it scores 3+3=6.
+#   Fine for ranking as long as it's consistent, but worth knowing before
+#   you read absolute scores as meaningful.
+# ---------------------------------------------------------------------------

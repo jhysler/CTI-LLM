@@ -1,0 +1,397 @@
+#!/usr/bin/env python3
+"""
+Stage 8: Produce per-document English translations.
+
+For each tier-1 document, writes two files:
+  - <doc_id>_<short>.en.md   readable English with inline CJK for loaded terms
+  - <doc_id>_<short>.zh.txt  raw Chinese extracted text (for manual verification)
+
+Also writes _index.md linking the lot.
+
+For PPTX/PPT (slide decks), attaches rasterized slide images so diagram text
+and labels are included in the translation. For text-heavy PDFs and HTML,
+translates the extracted text directly.
+
+Usage:
+  export ANTHROPIC_API_KEY=sk-...
+  python scripts/08_translate.py \
+      --tier-csv ~/geedge-data/triage/tier1_dns4cn.csv \
+      --topic dns4cn
+
+Cost: ~$5-8 across ~23 docs with mixed PPTX (image-augmented) and PDF/HTML
+(text-only) handling. Opus 4.7 recommended for the loaded-term nuance.
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import os
+import re
+import sys
+from pathlib import Path
+from typing import Optional
+
+import orjson
+import pandas as pd
+import yaml
+from anthropic import Anthropic
+from tqdm import tqdm
+
+WORK = Path(os.environ.get("GEEDGE_WORK", Path.home() / "geedge-data"))
+TEXT_DIR = WORK / "text"
+RASTER_DIR = WORK / "rasterized"
+OUT_DIR = WORK / "translations"
+CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
+
+MAX_DOC_CHARS = 150_000
+MAX_OUTPUT_TOKENS = 16000
+MAX_IMAGES_PER_DOC = 30
+
+PPTX_EXTS = {".pptx", ".ppt"}
+
+SYSTEM_PROMPT = """You are producing a faithful English translation of a Chinese
+document leaked from Geedge Networks / MESA Lab (Chinese Academy of Sciences),
+a network surveillance and censorship infrastructure vendor.
+
+Topic context for this corpus: {topic_description}
+
+The reader does not read Chinese. They need to be able to read your translation
+straight through and understand what the document says, while preserving the
+ability to verify any specific claim against the Chinese source.
+
+PRINCIPLES:
+
+1. Translate every section. Do not summarize, condense, or skip. If a slide
+   has a title and 4 bullet points, the translation has the title and 4 bullets.
+
+2. For loaded or technically specific terms — especially those with PRC
+   policy/censorship overtones — preserve the original Chinese inline in
+   parentheses on first use, and translate to the *operationally accurate*
+   English rather than the surface-level rendering. Examples:
+
+   - 测绘 → "reconnaissance/mapping (测绘)" not just "surveying"
+   - 解析逃逸 → "resolution escape — i.e., circumvention via encrypted DNS (解析逃逸)"
+   - 敏感域名 → "sensitive/blocked domains (敏感域名)"
+   - 信息内容安全 → "information content security (信息内容安全, i.e. content control/censorship research, not generic infosec which would be 信息安全)"
+   - 维稳 → "stability maintenance (维稳)"
+   - 替代应答 / 劫持式替代解析 → "alternative response / hijack-style substitute resolution (劫持式替代解析)"
+   - 网络自强 → "network self-strengthening / sovereignty framing (网络自强)"
+   - 精确拦截 → "precise interception (精确拦截)"
+   - 路径绕过式风险 → "path-bypass risk (路径绕过式风险)"
+
+   After first use in a document, the English rendering alone is fine.
+
+3. Personnel names: give pinyin and the Chinese characters once on first
+   mention: "Zhu Yujia (朱宇佳)". After that, English form alone is fine.
+
+4. Project names, funding codes, institution names: preserve the Chinese in
+   parentheses on first mention (XDC02030000, 国家242 program, MESA Lab /
+   信工所二室, etc.).
+
+5. If the source has citations to English papers/RFCs, keep them in their
+   original English form. Don't translate paper titles back.
+
+6. If you encounter garbled text (rasterizer font failures showing □□□, or
+   OCR artifacts), call it out with [GARBLED: <description>] inline. Don't
+   guess at what it said.
+
+7. For slide decks: structure the output as one section per slide:
+        ## Slide N: <slide title>
+        <translated body>
+
+   If a slide is mostly an architecture diagram, describe what the diagram
+   shows in addition to translating any text labels.
+
+8. For long text documents: preserve the original heading structure.
+   Translate section titles.
+
+9. At the start of the translation, write a 2-3 sentence "Document overview"
+   in English: what kind of document this is (slide deck/paper/wiki page),
+   by whom, dated when, and what its top-level purpose is.
+
+10. Do not editorialize. Do not add commentary. Do not add disclaimers.
+    Translation only.
+
+Output the translation directly. Begin with the Document overview.
+"""
+
+INDEX_HEADER = """# DNS4CN Tier-1 Document Translations
+
+Per-document English translations of the {n} tier-1 documents from the DNS4CN
+research scope. Each entry links to:
+- `.en.md` — readable English translation with inline CJK for loaded terms
+- `.zh.txt` — raw Chinese extracted text (for manual verification)
+
+Where original documents are slide decks (PPTX/PPT), translations include
+content visible only in rasterized slide images (diagrams, labels) in
+addition to extracted text.
+
+Generated by `scripts/08_translate.py` using Claude Opus 4.7.
+"""
+
+
+def load_topic(name: str) -> dict:
+    path = CONFIG_DIR / f"{name}.yaml"
+    with path.open() as f:
+        return yaml.safe_load(f)
+
+
+def build_doc_id_index() -> dict[str, tuple[Path, int]]:
+    idx = {}
+    for shard in sorted(TEXT_DIR.glob("shard_*.jsonl")):
+        with shard.open("rb") as f:
+            offset = 0
+            for line in f:
+                try:
+                    rec = orjson.loads(line)
+                    idx[rec["id"]] = (shard, offset)
+                except Exception:
+                    pass
+                offset += len(line)
+    return idx
+
+
+def fetch_doc(doc_id: str, idx: dict) -> Optional[dict]:
+    loc = idx.get(doc_id)
+    if not loc:
+        return None
+    shard, offset = loc
+    with shard.open("rb") as f:
+        f.seek(offset)
+        return orjson.loads(f.readline())
+
+
+def load_slide_images(doc_id: str, max_images: int = MAX_IMAGES_PER_DOC) -> list[dict]:
+    img_dir = RASTER_DIR / doc_id
+    if not img_dir.exists():
+        return []
+    blocks = []
+    for slide_path in sorted(img_dir.glob("slide-*.png"))[:max_images]:
+        with slide_path.open("rb") as f:
+            data = base64.standard_b64encode(f.read()).decode("ascii")
+        blocks.append({
+            "type": "image",
+            "source": {"type": "base64", "media_type": "image/png", "data": data},
+        })
+    return blocks
+
+
+def short_filename(path: str) -> str:
+    """Produce a filesystem-safe short identifier for the output filename."""
+    stem = Path(path).stem
+    # Strip the Confluence ID prefix like "111979477_attachments_"
+    stem = re.sub(r"^\d+_attachments_", "", stem)
+    # Replace non-safe chars; keep CJK
+    stem = re.sub(r"[^\w\u4e00-\u9fff\-]", "_", stem)
+    return stem[:80]
+
+
+def translate_one(
+    client: Anthropic,
+    rec: dict,
+    system_prompt: str,
+    model: str,
+    max_output_tokens: int = MAX_OUTPUT_TOKENS,
+    max_images: int = MAX_IMAGES_PER_DOC,
+    max_doc_chars: int = MAX_DOC_CHARS,
+) -> tuple[str, dict]:
+    text = (rec.get("text") or "")[:max_doc_chars]
+    truncated = len(rec.get("text") or "") > max_doc_chars
+    image_blocks = load_slide_images(rec["id"], max_images=max_images)
+
+    intro = (
+        f"Path: {rec['path']}\n"
+        f"Detected language tag: {rec.get('lang') or 'unknown'} "
+        f"(may be wrong — judge from the text itself)\n"
+        f"{'[%d slide images attached]' % len(image_blocks) if image_blocks else ''}\n"
+        f"{'[Text truncated to first %d chars]' % max_doc_chars if truncated else ''}\n\n"
+        f"--- EXTRACTED TEXT ---\n{text}"
+    )
+
+    user_content = [{"type": "text", "text": intro}] + image_blocks
+
+    resp = client.messages.create(
+        model=model,
+        max_tokens=MAX_OUTPUT_TOKENS,
+        system=[{"type": "text", "text": system_prompt,
+                 "cache_control": {"type": "ephemeral"}}],
+        messages=[{"role": "user", "content": user_content}],
+    )
+
+    translation = "".join(b.text for b in resp.content if b.type == "text")
+    usage = {
+        "input_tokens": resp.usage.input_tokens,
+        "output_tokens": resp.usage.output_tokens,
+        "cache_creation_input_tokens": getattr(resp.usage, "cache_creation_input_tokens", 0),
+        "cache_read_input_tokens": getattr(resp.usage, "cache_read_input_tokens", 0),
+        "n_images": len(image_blocks),
+    }
+    return translation, usage
+
+
+def estimate_cost(usage: dict, model: str) -> float:
+    rates = {
+        "sonnet": {"in": 3.00, "out": 15.00, "cw": 3.75, "cr": 0.30},
+        "opus":   {"in": 5.00, "out": 25.00, "cw": 6.25, "cr": 0.50},
+    }
+    r = rates["opus" if "opus" in model else "sonnet"]
+    return (
+        usage.get("input_tokens", 0) * r["in"]
+        + usage.get("output_tokens", 0) * r["out"]
+        + usage.get("cache_creation_input_tokens", 0) * r["cw"]
+        + usage.get("cache_read_input_tokens", 0) * r["cr"]
+    ) / 1_000_000
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--tier-csv", required=True)
+    ap.add_argument("--topic", required=True)
+    ap.add_argument("--model", default="claude-opus-4-7")
+    ap.add_argument("--max-docs", type=int, default=0)
+    ap.add_argument("--skip-existing", action="store_true", default=True,
+                    help="skip docs whose .en.md already exists (default on)")
+    ap.add_argument("--force", action="store_true",
+                    help="re-translate even if output exists")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--max-output-tokens", type=int, default=MAX_OUTPUT_TOKENS,
+                    help="max output tokens per translation (default 16000)")
+    ap.add_argument("--max-images", type=int, default=MAX_IMAGES_PER_DOC,
+                    help=f"max slide images to send per doc (default {MAX_IMAGES_PER_DOC}; "
+                         f"raise to handle decks longer than {MAX_IMAGES_PER_DOC} slides)")
+    ap.add_argument("--max-doc-chars", type=int, default=MAX_DOC_CHARS,
+                    help=f"max extracted-text characters per doc (default {MAX_DOC_CHARS})")
+    args = ap.parse_args()
+
+    # Load .env if present and key not already in environment
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        env_file = Path.home() / ".env"
+        if env_file.exists():
+            for line in env_file.read_text().splitlines():
+                line = line.strip()
+                if line.startswith("ANTHROPIC_API_KEY=") and "=" in line:
+                    os.environ["ANTHROPIC_API_KEY"] = line.split("=", 1)[1].strip().strip("'\"")
+                    break
+
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        print("ERROR: ANTHROPIC_API_KEY not set in environment or ~/.env", file=sys.stderr)
+        return 1
+
+    topic = load_topic(args.topic)
+    df = pd.read_csv(args.tier_csv)
+    if args.max_docs:
+        df = df.head(args.max_docs)
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    topic_out = OUT_DIR / args.topic
+    topic_out.mkdir(exist_ok=True)
+
+    print(f"Topic: {args.topic}")
+    print(f"Docs to translate: {len(df)}")
+    print(f"Model: {args.model}")
+    print(f"Output: {topic_out}")
+
+    print("\nBuilding shard index...")
+    idx = build_doc_id_index()
+    print(f"Indexed {len(idx):,} extracted docs")
+
+    if args.dry_run:
+        print("\nDRY RUN:")
+        for _, row in df.iterrows():
+            present = "OK" if row["id"] in idx else "MISSING"
+            img_dir = RASTER_DIR / row["id"]
+            n_imgs = len(list(img_dir.glob("slide-*.png"))) if img_dir.exists() else 0
+            ext = Path(row["path"]).suffix.lower()
+            mode = "image+text" if ext in PPTX_EXTS and n_imgs else "text-only"
+            short = short_filename(row["path"])
+            en_path = topic_out / f"{row['id']}_{short}.en.md"
+            status = "EXISTS" if en_path.exists() else "new"
+            print(f"  [{present}] [{mode:>10}] [{status}] {row['path']}")
+        return 0
+
+    system_prompt = SYSTEM_PROMPT.format(
+        topic_description=topic["description"].strip()
+    )
+
+    client = Anthropic()
+    total_cost = 0.0
+    index_rows = []
+
+    for _, row in tqdm(df.iterrows(), total=len(df), unit="doc"):
+        short = short_filename(row["path"])
+        en_path = topic_out / f"{row['id']}_{short}.en.md"
+        zh_path = topic_out / f"{row['id']}_{short}.zh.txt"
+
+        # Skip if already done unless --force
+        if en_path.exists() and not args.force:
+            tqdm.write(f"  ⊙ exists: {short[:60]}")
+            index_rows.append({
+                "id": row["id"], "path": row["path"], "short": short,
+                "score": row["score"], "lang": row.get("lang", ""),
+                "en_file": en_path.name, "zh_file": zh_path.name,
+            })
+            continue
+
+        rec = fetch_doc(row["id"], idx)
+        if not rec:
+            tqdm.write(f"  ✗ no shard record: {row['path']}", file=sys.stderr)
+            continue
+        if not (rec.get("text") or "").strip():
+            tqdm.write(f"  ✗ empty extracted text: {row['path']}", file=sys.stderr)
+            continue
+
+        try:
+            translation, usage = translate_one(
+                client, rec, system_prompt, args.model,
+                max_output_tokens=args.max_output_tokens,
+                max_images=args.max_images,
+                max_doc_chars=args.max_doc_chars,
+            )
+        except Exception as e:
+            tqdm.write(f"  ✗ API error on {row['path']}: {e}", file=sys.stderr)
+            continue
+
+        cost = estimate_cost(usage, args.model)
+        total_cost += cost
+
+        # Write the English translation
+        en_path.write_text(
+            f"# {Path(row['path']).name}\n\n"
+            f"**Source path:** `{row['path']}`\n"
+            f"**Triage score:** {row['score']} | **Detected lang:** "
+            f"{row.get('lang', '?')} | **Images attached:** "
+            f"{usage.get('n_images', 0)}\n\n---\n\n"
+            f"{translation}\n"
+        )
+
+        # Write the raw Chinese text for verification
+        zh_path.write_text(rec.get("text") or "")
+
+        img_note = f" +{usage['n_images']} imgs" if usage.get("n_images") else ""
+        tqdm.write(f"  ✓ {short[:55]} — ${cost:.3f}{img_note}")
+
+        index_rows.append({
+            "id": row["id"], "path": row["path"], "short": short,
+            "score": row["score"], "lang": row.get("lang", ""),
+            "en_file": en_path.name, "zh_file": zh_path.name,
+        })
+
+    # Write the index
+    idx_md = topic_out / "_index.md"
+    lines = [INDEX_HEADER.format(n=len(index_rows)), "\n## Documents\n"]
+    lines.append("| Score | Source path | English | Chinese |")
+    lines.append("| ----- | ----------- | ------- | ------- |")
+    for r in sorted(index_rows, key=lambda x: -x["score"]):
+        lines.append(
+            f"| {r['score']} | `{r['path']}` | "
+            f"[{r['en_file']}]({r['en_file']}) | "
+            f"[{r['zh_file']}]({r['zh_file']}) |"
+        )
+    idx_md.write_text("\n".join(lines) + "\n")
+    print(f"\n✓ Index: {idx_md}")
+    print(f"✓ Total cost: ${total_cost:.2f}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

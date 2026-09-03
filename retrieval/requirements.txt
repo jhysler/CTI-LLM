@@ -1,0 +1,20 @@
+# retrieval/ subsystem — heavy deps, kept separate from the root requirements.txt
+# (Stages 1-4 don't need any of this). Install into the same venv on the WSL /
+# RTX 4080 box:
+#     pip install -r retrieval/requirements.txt
+#
+# torch here is the CPU wheel spec; on the CUDA box install the matching cuXXX
+# build first (see retrieval/README.md) so this line resolves against it.
+
+torch>=2.2
+FlagEmbedding>=1.2.10
+transformers>=4.40
+lancedb>=0.13
+tantivy>=0.22          # native FTS/BM25 backend used by LanceDB create_fts_index
+tabulate>=0.9
+
+# Pins matching the root requirements.txt (shared with scripts/)
+orjson==3.10.12
+tqdm==4.67.1
+pyyaml==6.0.2
+pyarrow==18.1.0

@@ -1,0 +1,186 @@
+# Geedge/MESA Corpus — RAG Seed Prompts (7B-14B local)
+#
+# One topic per standing question. Consumed by retrieval/seed_ask.py, which
+# fills these into the shared template in that script and runs retrieval +
+# a local Ollama model per topic.
+#
+# Section F (attribution sweep) is meant to run last, over the union of doc
+# chunks retrieved across sections A-E (see coaching notes below) rather than
+# its own fresh search — that's what `use_union_context: true` triggers.
+
+sections:
+  - id: A
+    name: National DNS / censorship architecture
+    topics:
+      - id: dns4cn
+        topic: DNS4CN
+        question: >-
+          What is DNS4CN, who proposed it, and what does it change about DNS
+          control in China?
+        terms: [DNS4CN, 加密DNS测绘, 国家根, 解析器画像, Fang Binxing, 方滨兴]
+        fields: [WHAT, AUTHOR/ORG, MECHANISM, FOREIGN_MODELS_CITED]
+
+      - id: shield_cube
+        topic: Shield-Cube / CubeShield (盾立方)
+        question: >-
+          What is the Shield-Cube framework and how does it relate to DNS4CN
+          and censorship?
+        terms: [盾立方, Shield-Cube, 感知, 研判, 阻断, 四层]
+        fields: [LAYERS, COMPONENTS, LINK_TO_DNS4CN]
+
+      - id: national_root
+        topic: National / innovation root (创新根)
+        question: >-
+          Does the corpus describe China-controlled root servers or a
+          national/alternative root, and how?
+        terms: [创新根, 国家根, 根联盟, root server, anycast]
+        fields: [DESIGN, GOVERNANCE, FOREIGN_DECOUPLING]
+
+      - id: encrypted_dns_interdiction
+        topic: Encrypted-DNS interdiction (DoH/DoT/DoQ)
+        question: >-
+          How does the system detect, block, or substitute encrypted DNS
+          (DoH/DoT/DoQ/DNSCrypt)?
+        terms: [DoH, DoT, DoQ, DNSCrypt, 替代应答, 劫持式替代解析, 解析逃逸]
+        fields: [DETECTION_METHOD, "BLOCK/SUBSTITUTE", CLAIMED_METRICS, VANTAGE_POINTS]
+
+      - id: dns_watermarking
+        topic: DNS watermarking / metadata
+        question: >-
+          Does the corpus describe DNS watermarks or extended DNS metadata to
+          mark legitimate requests?
+        terms: [域名水印, 水印, DNS watermark, 扩展]
+        fields: [MECHANISM, PURPOSE]
+
+  - id: B
+    name: Traffic analysis / GFW backbone
+    topics:
+      - id: high_speed_traffic_system
+        topic: High-Speed Network Traffic Processing & Analysis System
+        question: >-
+          What are the capabilities, throughput, hardware, and deployment
+          scale of this traffic-analysis system?
+        terms: [高速网络流量处理分析系统, 技术白皮书, 全流量, Galaxy SQL, Tbps]
+        fields: [CAPABILITIES, THROUGHPUT, HARDWARE, DEPLOY_COUNT, CUSTOMERS, APPS_CLASSIFIED]
+
+      - id: encrypted_traffic_recognition
+        topic: Encrypted traffic recognition (ML/DPI)
+        question: >-
+          How is machine learning applied to identify encrypted or malicious
+          traffic via DPI?
+        terms: [加密流量识别, 流量指纹, DPI, 深度包检测, 机器学习]
+        fields: [METHOD, CLAIMED_ACCURACY, DATASET]
+
+      - id: clap_detecting_dpi
+        topic: CLAP / Detecting DPI
+        question: >-
+          What is the CLAP approach and what does the "Detecting DPI" work
+          claim?
+        terms: [CLAP, Detecting DPI, MAWI, unsupervised, anomaly]
+        fields: [STAGES, DATASET, CLAIMED_ACCURACY]
+
+      - id: aiops_defense_posture
+        topic: AIOps / AI-driven defense posture
+        question: >-
+          How is AIOps / AI framed as central to future cyber-defense
+          strategy?
+        terms: [AIOps, 智能运维, 异常检测, IoT]
+        fields: [ROLE, JUSTIFICATION]
+
+  - id: C
+    name: Cyberspace mapping / measurement
+    topics:
+      - id: cyberspace_service_mapping
+        topic: Cyberspace Service Mapping (网络空间服务测绘)
+        question: >-
+          What is service mapping, its pipeline, and its stated use cases?
+        terms: [网络空间服务测绘, 测绘, 知识图谱, holographic, Zhu Yujia, 朱宇佳]
+        fields: [PIPELINE, USE_CASES, OUTPUT_ARTIFACT]
+
+      - id: seestar
+        topic: SeeStar (satellite/Starlink mapping)
+        question: >-
+          What does the SeeStar platform detect and map regarding satellite
+          internet?
+        terms: [SeeStar, Starlink, 星链, 卫星互联网, POP, ground station]
+        fields: [TARGETS, OUTPUT, STATED_PURPOSE]
+
+      - id: dark_web_mapping
+        topic: Dark-web mapping / cyber range (暗网靶场)
+        question: >-
+          How does the corpus describe mapping Tor/I2P and any dark-web cyber
+          range?
+        terms: [暗网, 暗网靶场, Tor, I2P, 隐藏服务]
+        fields: [SCALE, ENTITIES_EXTRACTED, METHOD]
+
+      - id: core_service_mapping_foreign_dependency
+        topic: Core service mapping / foreign dependency
+        question: >-
+          How does the corpus measure China's foreign dependency for
+          DNS/CDN/web/email?
+        terms: [上游依赖, 境外依赖, CDN, DNS, email, foreign reliance]
+        fields: [SERVICES, DEPENDENCY_METRICS, LINK_TO_DNS4CN]
+
+  - id: D
+    name: Named defense/offense systems
+    topics:
+      - id: ghost_fortress
+        topic: Ghost Fortress (幽灵堡垒)
+        question: >-
+          What is Ghost Fortress, who is involved, and what does it claim to
+          do?
+        terms: [幽灵堡垒, Ghost Fortress, 吕述望, Lu Shuwang, CHASE, CHESS, HACCS]
+        fields: [WHAT, PEOPLE, INSPIRATION, PROACTIVE_CLAIMS]
+
+      - id: ether_shield
+        topic: Ether Shield (以太盾)
+        question: What is Ether Shield and what infrastructure does it protect?
+        terms: [以太盾, Ether Shield, 工控, 卫星通信, 智慧城市]
+        fields: [WHAT, PROTECTED_SYSTEMS, MECHANISM]
+
+      - id: network_cyber_range
+        topic: Network / cyber range (网络靶场)
+        question: >-
+          What network-range (cyber range) designs appear, and which agency
+          are they built for?
+        terms: [网络靶场, 靶场, network range, 公安部, MPS, 仿真]
+        fields: [PURPOSE, CUSTOMER, CAPABILITIES]
+
+  - id: E
+    name: Regional / export deployments
+    topics:
+      - id: xinjiang_912_firewall
+        topic: Xinjiang 912 firewall
+        question: >-
+          What does the corpus reveal about the Xinjiang "912" firewall
+          project and regional censorship?
+        terms: ["912", 新疆, Xinjiang, 乌鲁木齐, Urumqi, firewall, decentralized]
+        fields: [PROJECT_SCOPE, ARCHITECTURE, NATIONAL_MODEL_ROLE]
+
+      - id: geedge_gfw_exporter
+        topic: Geedge as GFW exporter
+        question: >-
+          What products does Geedge sell abroad and to which
+          countries/customers?
+        terms: [Geedge, Cyber Narrator, TSG, Tiangou, 天狗, Landasoft, export]
+        fields: [PRODUCTS, CUSTOMER_COUNTRIES, CONTRACTS, PRICING]
+
+      - id: locknet
+        topic: Locknet (decoupled boundary)
+        question: >-
+          How is China's internet boundary ("Locknet") and cross-border data
+          control described?
+        terms: [Locknet, "443", "853", 边界, data exfiltration, cross-border]
+        fields: [BOUNDARY_CONTROLS, PORTS, STATED_GOAL]
+
+  - id: F
+    name: People & institutions (attribution)
+    topics:
+      - id: personnel_attribution_sweep
+        topic: Personnel attribution sweep
+        question: >-
+          Which named people and institutions appear, with their roles and
+          affiliations?
+        terms: [方滨兴, 朱宇佳, 吕述望, IIE, 信息工程研究所, MESA, 国家保密局, 公安部, 国家计算机网络与信息安全管理中心]
+        fields: [PERSON, CHINESE_NAME, AFFILIATION, ROLE, LINKED_SYSTEM]
+        use_union_context: true

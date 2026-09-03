@@ -1,0 +1,13 @@
+# Stage 1-4: extraction, inventory, triage
+# Stage 5+ deps (torch, FlagEmbedding, lancedb, anthropic) added later
+# The retrieval/ subsystem has its own heavy deps — see retrieval/requirements.txt
+
+unstructured[docx,pptx,pdf,xlsx,md,html,msg]==0.16.11
+python-magic==0.4.27
+langdetect==1.0.9
+pyyaml==6.0.2
+tqdm==4.67.1
+pandas==2.2.3
+pyarrow==18.1.0
+orjson==3.10.12
+pdfminer.six==20221105
