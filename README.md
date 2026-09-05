@@ -1,3 +1,5 @@
+# Note: Written with Claude, judgments/QA, and debugging are my own - Justin
+
 # Geedge Leak RAG Pipeline
 
 A staged, local-first pipeline for analyzing the Geedge / MESA Lab document leak
