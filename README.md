@@ -1,4 +1,4 @@
-## Note: Written with Claude, judgments/QA, and debugging are my own - Justin
+## Note: This project Written with Claude. The workflow, judgments/QA, and debugging are my own - Justin
 
 # Geedge Leak RAG Pipeline
 
